@@ -108,4 +108,21 @@ class ApiService {
       throw Exception('Failed to delete card');
     }
   }
+
+  Future<void> createCollection({
+    required String collectionName, 
+    String? description
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/collections'),
+      body: json.encode({
+        'name': collectionName,
+        'description': description ?? '',
+      }),
+    );
+    
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception('Failed to create collection: ${response.statusCode}');
+    }
+  }
 }

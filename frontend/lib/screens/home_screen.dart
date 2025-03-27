@@ -138,6 +138,100 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     }
   }
 
+  void _showAddCollectionDialog() {
+    final formKey = GlobalKey<FormState>();
+    String collectionName = '';
+    String description = '';
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Add New Collection'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: 'Collection Name',
+                      hintText: 'Enter collection name',
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter a collection name';
+                      }
+                      return null;
+                    },
+                    onSaved: (value) {
+                      collectionName = value!;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: 'Description (Optional)',
+                      hintText: 'Enter collection description',
+                    ),
+                    maxLines: 3,
+                    onSaved: (value) {
+                      description = value ?? '';
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('CANCEL'),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  formKey.currentState!.save();
+                  Navigator.of(context).pop();
+                  
+                  try {
+                    // Show loading indicator
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Creating collection...'))
+                    );
+                    
+                    // Call API to create new collection
+                    await widget.apiService.createCollection(
+                      collectionName: collectionName,
+                      description: description,
+                    );
+                    
+                    if (!mounted) return;
+                    
+                    // Refresh the collections list
+                    _refreshCollections();
+                    
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Collection created successfully!'))
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error creating collection: $e'))
+                    );
+                  }
+                }
+              },
+              child: const Text('CREATE'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildCardGrid(List<CardModel> cards) {
     return GridView.builder(
       padding: const EdgeInsets.all(8.0),
@@ -423,12 +517,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           ],
         ),
         floatingActionButton: FloatingActionButton(
-          onPressed: () {
-            // TODO: Implement adding a collection
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Add Collection functionality coming soon!'))
-            );
-          },
+          onPressed: _showAddCollectionDialog,
           tooltip: 'Add Collection',
           child: const Icon(Icons.add),
         ),

@@ -139,6 +139,56 @@ app.get('/api/collections/:collectionName/cards', asyncHandler(async (req: Reque
     });
 }));
 
+// Create a new collection
+app.post('/api/collections', asyncHandler(async (req: Request, res: Response) => {
+    const { name, options } = req.body;
+    
+    // Improved validation with more helpful error messages
+    if (!req.body) {
+        return res.status(400).json({ 
+            error: 'Missing request body',
+            expected: { name: 'string', options: 'object (optional)' }
+        });
+    }
+    
+    if (!name) {
+        return res.status(400).json({ 
+            error: 'Missing collection name',
+            received: req.body
+        });
+    }
+    
+    if (typeof name !== 'string') {
+        return res.status(400).json({ 
+            error: 'Invalid collection name. Name must be a string.',
+            received: { 
+                name: name,
+                type: typeof name 
+            }
+        });
+    }
+    
+    try {
+        // Log the incoming request for debugging
+        console.log('Creating collection with name:', name, 'options:', options);
+        
+        const result = await dbService.createCollection(name, options);
+        await dbService.saveDatabase();
+        
+        res.status(201).json({ 
+            success: true, 
+            message: 'Collection created successfully', 
+            collection: result 
+        });
+    } catch (error) {
+        // Handle case where collection already exists
+        if (error instanceof Error && error.message.includes('already exists')) {
+            return res.status(409).json({ error: 'Collection already exists' });
+        }
+        throw error; // Let the asyncHandler deal with other errors
+    }
+}));
+
 // Get a specific card from a collection
 app.get('/api/collections/:collectionName/cards/:cardId', asyncHandler(async (req: Request, res: Response) => {
     const { collectionName, cardId } = req.params;

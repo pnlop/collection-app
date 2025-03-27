@@ -1,9 +1,17 @@
 import loki, { Loki, Collection } from 'lokijs';
 
+interface CollectionMetadata {
+    name: string;
+    description: string;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
 class DatabaseService {
     private db: Loki;
     private collections: Map<string, Collection<any>> = new Map();
     private initialized: boolean = false;
+    private metaCollection: Collection<CollectionMetadata> | null = null;
 
     constructor(dbName: string) {
         this.db = new loki(dbName);
@@ -17,10 +25,53 @@ class DatabaseService {
                 if (err) {
                     return reject(err);
                 }
+                this.metaCollection = this.db.getCollection('collection_metadata');
+                if (!this.metaCollection) {
+                    this.metaCollection = this.db.addCollection('collection_metadata', {
+                        indices: ['name']
+                    });
+                }
                 this.initialized = true;
                 resolve();
             });
         });
+    }
+
+    async createCollection(name: string, description: string = ''): Promise<CollectionMetadata> {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        if (!name || name.trim() === '') {
+            throw new Error('Collection name cannot be empty');
+        }
+
+        if (name === 'collection_metadata') {
+            throw new Error('This collection name is reserved');
+        }
+
+        if (this.metaCollection!.findOne({ name })) {
+            throw new Error(`Collection "${name}" already exists`);
+        }
+
+        const collection = this.db.addCollection(name, {
+            indices: ['id']
+        });
+        this.collections.set(name, collection);
+
+        const now = new Date();
+        const metadata: CollectionMetadata = {
+            name,
+            description,
+            createdAt: now,
+            updatedAt: now
+        };
+
+        this.metaCollection!.insert(metadata);
+
+        await this.saveDatabase();
+
+        return metadata;
     }
 
     getCollection(collectionName: string): Collection<any> {
@@ -41,8 +92,66 @@ class DatabaseService {
         return collection;
     }
 
-    listCollections(): string[] {
-        return this.db.listCollections().map(c => c.name);
+    listCollections(): { name: string; description: string }[] {
+        if (!this.initialized || !this.metaCollection) {
+            return [];
+        }
+
+        return this.metaCollection.find().map(meta => ({
+            name: meta.name,
+            description: meta.description
+        }));
+    }
+
+    async deleteCollection(collectionName: string): Promise<boolean> {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        if (collectionName === 'collection_metadata') {
+            return false;
+        }
+
+        this.collections.delete(collectionName);
+
+        const metadata = this.metaCollection!.findOne({ name: collectionName });
+        if (metadata) {
+            this.metaCollection!.remove(metadata);
+        }
+
+        if (this.db.getCollection(collectionName)) {
+            this.db.removeCollection(collectionName);
+            await this.saveDatabase();
+            return true;
+        }
+
+        return false;
+    }
+
+    async updateCollectionMetadata(name: string, description: string): Promise<CollectionMetadata | null> {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        const metadata = this.metaCollection!.findOne({ name });
+        if (!metadata) {
+            return null;
+        }
+
+        metadata.description = description;
+        metadata.updatedAt = new Date();
+        this.metaCollection!.update(metadata);
+
+        await this.saveDatabase();
+        return metadata;
+    }
+
+    async getCollectionMetadata(name: string): Promise<CollectionMetadata | null> {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        return this.metaCollection!.findOne({ name }) || null;
     }
 
     async createOrUpdateCard(collectionName: string, card: any, idField: string = 'id'): Promise<any> {
@@ -121,16 +230,6 @@ class DatabaseService {
         return false;
     }
 
-    deleteCollection(collectionName: string): boolean {
-        this.collections.delete(collectionName);
-
-        if (this.db.getCollection(collectionName)) {
-            this.db.removeCollection(collectionName);
-            return true;
-        }
-
-        return false;
-    }
     saveDatabase(): Promise<void> {
         return new Promise((resolve, reject) => {
             this.db.saveDatabase((err) => {
